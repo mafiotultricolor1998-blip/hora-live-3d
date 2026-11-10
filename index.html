@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hora Live 3D</title>
+<style>
+  :root { --bg:#1a0f12; --ink:#fff4e0; --red:#c8102e; --gold:#f2b705; --blue:#1d4e9e; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--ink); font-family:Georgia,'Times New Roman',serif; overflow:hidden; touch-action:none; }
+  canvas { display:block; }
+  #top { position:fixed; left:0; right:0; top:0; padding:calc(env(safe-area-inset-top,0px) + 10px) 14px 0; display:flex; justify-content:space-between; align-items:center; pointer-events:none; }
+  #top h1 { font-size:22px; margin:0; font-style:italic; }
+  #count { font-size:15px; opacity:.85; }
+  #banner { position:fixed; left:0; right:0; top:20%; text-align:center; font-size:28px; font-weight:bold; color:var(--gold); text-shadow:0 2px 12px #000; opacity:0; transition:opacity .4s; pointer-events:none; padding:0 12px; }
+  #bar { position:fixed; left:0; right:0; bottom:0; padding:10px 10px calc(env(safe-area-inset-bottom,0px) + 10px); display:flex; flex-wrap:wrap; gap:8px; justify-content:center; background:linear-gradient(transparent,rgba(26,15,18,.92) 40%); }
+  button, .file { font:inherit; font-size:16px; color:var(--ink); background:#3a1d24; border:2px solid var(--gold); border-radius:12px; padding:10px 14px; min-height:44px; display:inline-flex; align-items:center; }
+  button:active { background:var(--red); }
+  button.main { background:var(--red); border-color:var(--ink); font-weight:bold; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--blue); outline-offset:2px; }
+  #join { position:fixed; left:12px; right:12px; bottom:calc(env(safe-area-inset-bottom,0px) + 120px); background:rgba(26,15,18,.96); border:2px solid var(--gold); border-radius:16px; padding:14px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  #join[hidden] { display:none; }
+  #nm { flex:1 1 100%; font:inherit; font-size:18px; padding:10px; border-radius:10px; border:2px solid var(--gold); background:#2a1519; color:var(--ink); }
+</style>
+</head>
+<body>
+<div id="top"><h1>Hora Live 3D</h1><div id="count"></div></div>
+<div id="banner"></div>
+<div id="join" hidden>
+  <input id="nm" placeholder="Numele tău" maxlength="16" autocomplete="off">
+  <label class="file">📷 Poză<input type="file" id="ph" accept="image/*" hidden></label>
+  <button class="main" id="go">Intră în horă</button>
+  <button id="cancel">Anulează</button>
+</div>
+<div id="bar">
+  <button class="main" id="add">+ Dansator</button>
+  <button id="rem">− Dansator</button>
+  <button data-g="trandafir">🌹 Trandafir</button>
+  <button data-g="leu">🦁 Leu</button>
+  <button data-g="inima">❤️ Inimă</button>
+  <button data-g="galaxie">🌌 Galaxie</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
+<script>
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+{ const k = document.createElement('canvas'); k.width = 4; k.height = 256; const x = k.getContext('2d'), gr = x.createLinearGradient(0,0,0,256);
+  gr.addColorStop(0,'#4f86c6'); gr.addColorStop(.6,'#f2c58a'); gr.addColorStop(1,'#ffdca8'); x.fillStyle = gr; x.fillRect(0,0,4,256); scene.background = new THREE.CanvasTexture(k); }
+scene.fog = new THREE.Fog(0xf2d2a0, 45, 170);
+const camera = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, .1, 250);
+
+scene.add(new THREE.HemisphereLight(0xffe2b8, 0x4a5a30, .95));
+const sun = new THREE.DirectionalLight(0xffd2a0, 1.0); sun.position.set(-8,9,6);
+sun.castShadow = true; sun.shadow.mapSize.set(1024,1024);
+Object.assign(sun.shadow.camera, {left:-10,right:10,top:10,bottom:-10,near:1,far:30}); scene.add(sun);
+const glow = new THREE.PointLight(0xf2b705, 1.2, 14); glow.position.set(0,3,0); scene.add(glow);
+
+const floor = new THREE.Mesh(new THREE.CircleGeometry(130,64), new THREE.MeshStandardMaterial({color:0x5f8f3a, roughness:1}));
+floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; scene.add(floor);
+const ring = new THREE.Mesh(new THREE.RingGeometry(3.6,3.8,64), new THREE.MeshBasicMaterial({color:0xf2b705, side:THREE.DoubleSide}));
+ring.rotation.x = -Math.PI/2; ring.position.y = .01; scene.add(ring);
+
+const MT = (c,r=.75) => new THREE.MeshStandardMaterial({color:c, roughness:r});
+const WHITE = MT(0xfff8ec), BLACK = MT(0x181818), RED = MT(0xc8102e), BLUE = MT(0x1d4e9e), GOLD = MT(0xf2b705), GREEN = MT(0x2e7d32);
+const DS = THREE.DoubleSide;
+const SKINS = [0xf1c9a5,0xe0ac82,0xc68a62,0xf5d5b8], HAIRS = [0x2b1b12,0x4a2f1c,0x1a1a1a,0x7a5230,0xb07a3c];
+const COLORS = ['#c8102e','#1d4e9e','#2e7d32','#8e44ad','#d35400','#16807a'];
+
+// ---------- Curtea din Maramureș ----------
+const WOOD=MT(0x6b4426,.95), DARK=MT(0x3b2616,.95), ROOFM=MT(0x4a3a30,1), HAY=MT(0xd9b45a,1), STONE=MT(0x8a8780,1), LEAF=MT(0x4c8a35,1);
+function part(g, geo, m, x=0, y=0, z=0){ const o = new THREE.Mesh(geo, m); o.position.set(x,y,z); g.add(o); return o; }
+const cyl = (a,b,h,s=16,o=false,ts=0,tl=Math.PI*2) => new THREE.CylinderGeometry(a,b,h,s,1,o,ts,tl);
+const sph = r => new THREE.SphereGeometry(r,20,16);
+function box(g,w,h,d,m,x,y,z){ const o = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), m); o.position.set(x,y,z); o.castShadow = o.receiveShadow = true; g.add(o); return o; }
+function roofPair(g,L,W,a,y,m){ for(const s of [-1,1]){ const p = box(g,L,.14,W,m,0,y+(W/2)*Math.sin(a),s*(W/2)*Math.cos(a)); p.rotation.x = s*a; } }
+function put(o,ang,dist){ o.position.set(Math.cos(ang)*dist,0,Math.sin(ang)*dist); o.lookAt(0,0,0); scene.add(o); }
+(function buildScenery(){
+  const dm = new THREE.Object3D(), rnd = Math.random;
+  const dirt = new THREE.Mesh(new THREE.CircleGeometry(7.5,48), MT(0x8a6a45,1)); dirt.rotation.x = -Math.PI/2; dirt.position.y = .005; dirt.receiveShadow = true; scene.add(dirt);
+  // casa maramureșeană
+  const house = new THREE.Group(); box(house,9,3,5.5,WOOD,0,1.5,0);
+  for(let y=.4;y<3;y+=.45) box(house,9.1,.07,5.6,DARK,0,y,0);
+  roofPair(house,10,5.55,1.0,3,ROOFM);
+  const sh = new THREE.Shape(), H = 5.55*Math.sin(1.0); sh.moveTo(-3,0); sh.lineTo(3,0); sh.lineTo(0,H);
+  for(const s of [-1,1]){ const gm = new THREE.Mesh(new THREE.ShapeGeometry(sh), WOOD.clone()); gm.material.side = DS; gm.rotation.y = Math.PI/2; gm.position.set(s*4.55,3,0); house.add(gm); }
+  const lit = new THREE.MeshStandardMaterial({color:0xffd27a, emissive:0xffa030, emissiveIntensity:.8});
+  box(house,1.1,2.1,.12,DARK,0,1.05,2.78); box(house,1,.9,.12,lit,-2.6,1.8,2.78); box(house,1,.9,.12,lit,2.6,1.8,2.78); box(house,.7,2.2,.7,DARK,3.2,5,-1.2);
+  for(const x of [-1.6,1.6]) box(house,.22,2.8,.22,DARK,x*2.2,1.4,3.2);
+  put(house,3.5,24);
+  // poarta maramureșeană
+  const gate = new THREE.Group();
+  for(const x of [-1.8,1.8]){ box(gate,.5,4.2,.5,WOOD,x,2.1,0); for(const y of [.8,1.8,2.8,3.8]) box(gate,.62,.14,.62,DARK,x,y,0); }
+  box(gate,4.4,.5,.5,WOOD,0,4.2,0); roofPair(gate,5.6,2.7,.9,4.4,ROOFM);
+  for(const x of [-.9,.9]) box(gate,1.7,2.3,.12,WOOD,x,1.2,0);
+  put(gate,Math.PI/2,28);
+  // gard
+  const fm = new THREE.InstancedMesh(new THREE.BoxGeometry(.2,1.3,.06), WOOD, 150);
+  for(let i=0;i<150;i++){ const a = i/150*Math.PI*2, near = Math.abs(Math.atan2(Math.sin(a-Math.PI/2),Math.cos(a-Math.PI/2))) < .11;
+    dm.scale.setScalar(near?0:1); dm.position.set(Math.cos(a)*28,.65,Math.sin(a)*28); dm.rotation.set(0,-(a+Math.PI/2),0); dm.updateMatrix(); fm.setMatrixAt(i,dm.matrix); }
+  scene.add(fm);
+  for(const y of [.45,.95]){ const r = new THREE.Mesh(new THREE.TorusGeometry(28,.05,6,120,Math.PI*2-.22).rotateZ(Math.PI/2+.11).rotateX(Math.PI/2), WOOD); r.position.y = y; scene.add(r); }
+  // fântâna cu cumpănă
+  const well = new THREE.Group(); part(well,cyl(.75,.85,.8,18),STONE,0,.4,0); box(well,.18,3.2,.18,WOOD,1.5,1.6,0);
+  const beam = box(well,5,.12,.12,WOOD,0,3.1,0); beam.position.x = .4; beam.rotation.z = .22; part(well,cyl(.16,.13,.25,10),DARK,-1.7,2.2,0);
+  put(well,4.6,14);
+  // căpițe de fân
+  [[5.0,20],[5.5,23],[.5,21]].forEach(([a,d]) => { const h = new THREE.Group(); part(h,cyl(.05,.05,3.6,6),DARK,0,1.8,0); part(h,new THREE.ConeGeometry(1.25,2.8,14),HAY,0,1.9,0).castShadow = true; put(h,a,d); });
+  // lemne
+  const wp = new THREE.Group();
+  for(let r=0;r<3;r++) for(let c=0;c<5-r;c++){ const l = part(wp,cyl(.14,.14,1.8,8),WOOD,(c+r*.5-1.8)*.3,.15+r*.27,0); l.rotation.x = Math.PI/2; l.castShadow = true; }
+  put(wp,3.85,22);
+  // pruni
+  [.2,.9,2.2,4.1,5.3,5.9].forEach((a,i) => { const t = new THREE.Group(); part(t,cyl(.15,.2,1.7,8),DARK,0,.85,0).castShadow = true; const c = part(t,sph(1.5),LEAF,0,2.6,0); c.scale.y = .8; c.castShadow = true; put(t,a,14+i%3*3); });
+  // flori
+  const fp = [], fc = [], pal = [[.9,.1,.15],[1,.85,.1],[1,1,1],[.4,.5,1]];
+  for(let i=0;i<160;i++){ const a = rnd()*Math.PI*2, d = 8+rnd()*17, c = pal[Math.floor(rnd()*4)]; fp.push(Math.cos(a)*d,.08,Math.sin(a)*d); fc.push(c[0],c[1],c[2]); }
+  const fg = new THREE.BufferGeometry(); fg.setAttribute('position',new THREE.Float32BufferAttribute(fp,3)); fg.setAttribute('color',new THREE.Float32BufferAttribute(fc,3));
+  scene.add(new THREE.Points(fg,new THREE.PointsMaterial({size:.22,vertexColors:true})));
+  // biserica de lemn din depărtare
+  const ch = new THREE.Group(); box(ch,5,4,8,DARK,0,2,0); roofPair(ch,8.4,5.9,1.0,4,ROOFM); box(ch,3,7,3,DARK,0,3.5,-5.2);
+  part(ch,new THREE.ConeGeometry(1.8,10,8),ROOFM,0,12,-5.2);
+  for(const [x,z] of [[-1.2,-3.9],[1.2,-3.9],[-1.2,-6.5],[1.2,-6.5]]) part(ch,new THREE.ConeGeometry(.45,2.2,6),ROOFM,x,8.1,z);
+  put(ch,.7,55);
+  // dealuri și brazi
+  for(let k=0;k<12;k++){ const a = k/12*Math.PI*2+rnd()*.3, d = 95+rnd()*25, r = 26+rnd()*16;
+    const h = new THREE.Mesh(new THREE.SphereGeometry(r,24,12), MT(k%2?0x4a7a3a:0x5d8a45,1)); h.scale.y = .5; h.position.set(Math.cos(a)*d,-r*.15,Math.sin(a)*d); scene.add(h); }
+  const fi = new THREE.InstancedMesh(new THREE.ConeGeometry(1.3,4.5,8).translate(0,2.25,0), MT(0x1f4d2b,1), 110);
+  for(let i=0;i<110;i++){ const a = rnd()*Math.PI*2, d = 36+rnd()*50, s = .8+rnd()*1.2;
+    dm.position.set(Math.cos(a)*d,0,Math.sin(a)*d); dm.scale.setScalar(s); dm.rotation.set(0,0,0); dm.updateMatrix(); fi.setMatrixAt(i,dm.matrix); }
+  scene.add(fi);
+})();
+
+// ---------- Oameni ----------
+const lathe = a => new THREE.LatheGeometry(a.map(v => new THREE.Vector2(v[0],v[1])), 28);
+const TORSO = lathe([[.001,0],[.15,0],[.14,.08],[.15,.18],[.185,.31],[.2,.4],[.16,.47],[.06,.5],[.052,.6],[.001,.6]]);
+const SKIRT = lathe([[.15,.58],[.19,.48],[.27,.3],[.35,.14],[.4,0]]);
+const stripeMat = (() => { const c = document.createElement('canvas'); c.width = 128; c.height = 8; const x = c.getContext('2d');
+  ['#b3122a','#111','#f2b705','#b3122a','#1d4e9e','#b3122a','#111','#e8e0cc'].forEach((k,i) => { x.fillStyle = k; x.fillRect(i*16,0,16,8); });
+  const t = new THREE.CanvasTexture(c); t.wrapS = THREE.RepeatWrapping; t.repeat.set(3,1); return new THREE.MeshStandardMaterial({map:t, roughness:.85, side:DS}); })();
+const armSG = cyl(.055,.05,1,10).rotateX(Math.PI/2).translate(0,0,.5), handGeo = sph(.055);
+function makeArm(p){
+  const g = new THREE.Group(), sk = MT(p.skin,.55);
+  const slv = new THREE.Mesh(armSG, WHITE), fore = new THREE.Mesh(armSG, sk), hand = new THREE.Mesh(handGeo, sk);
+  g.add(slv,fore,hand); [slv,fore,hand].forEach(o => o.castShadow = true); g.userData = {slv,fore,hand}; return g;
+}
+function setArm(a, from, to){
+  const L = from.distanceTo(to), u = a.userData; a.position.copy(from); a.lookAt(to);
+  u.slv.scale.set(1.15,1.15,L*.6); u.fore.position.z = L*.6; u.fore.scale.set(.75,.75,L*.4); u.hand.position.z = L;
+}
+function makeDancer(p){
+  const gm = MODELS[p.fem?'f':'m'] || MODELS[p.fem?'m':'f'];
+  if(gm) return makeRealDancer(p, gm);
+  const g = new THREE.Group(), fem = p.fem, skin = MT(p.skin,.55), hairM = MT(p.hair,.9), legs = [];
+  const shirt = new THREE.MeshStandardMaterial({color:0xfff8ec, roughness:.9, side:DS});
+  for(const s of [-1,1]){
+    const hip = new THREE.Group(); hip.position.set(.085*s,.95,0); g.add(hip);
+    part(hip, cyl(.082,.062,.46), WHITE, 0,-.23,0);
+    const knee = new THREE.Group(); knee.position.y = -.46; hip.add(knee);
+    part(knee, sph(.062), WHITE); part(knee, cyl(.06,.042,.4), WHITE, 0,-.2,0);
+    part(knee, new THREE.BoxGeometry(.1,.07,.25), MT(0x4a3020), 0,-.42,.05);
+    legs.push({hip, knee, s});
+  }
+  part(g, TORSO, shirt, 0,.97,0);
+  part(g, cyl(.202,.2,.05,24), fem ? BLUE : RED, 0,1.36,0);
+  part(g, cyl(.062,.07,.04,16), RED, 0,1.56,0);
+  if(fem){
+    part(g, SKIRT, stripeMat, 0,.42,0);
+    const ap = part(g, cyl(.19,.415,.52,28,true,-.85,1.7), BLACK, 0,.7,0); ap.material = MT(0x151515,.9); ap.material.side = DS;
+    const hm = part(g, cyl(.418,.418,.04,28,true,-.85,1.7), GOLD, 0,.45,0); hm.material.side = DS;
+    const vs = part(g, cyl(.205,.165,.3,20,true,.9,Math.PI*2-1.8), BLACK, 0,1.22,0); vs.material.side = DS;
+  } else {
+    part(g, cyl(.178,.172,.13,20), MT(0x3a2414), 0,1.0,0); part(g, new THREE.BoxGeometry(.06,.06,.02), GOLD, 0,1.0,.176);
+    const v = part(g, cyl(.205,.165,.3,24,true,.8,Math.PI*2-1.6), MT(0x24170f), 0,1.22,0); v.material.side = DS;
+  }
+  const head = new THREE.Group(); head.position.y = 1.74; g.add(head);
+  part(head, sph(.14), skin).scale.set(1,1.12,1.04);
+  part(head, sph(.022), skin, 0,-.015,.145).scale.set(1,1.2,1.1);
+  for(const s of [-1,1]){
+    part(head, sph(.022), MT(0xffffff,.3), .05*s,.03,.128).scale.set(1,1.1,.5);
+    part(head, sph(.012), MT(0x2a1a0e,.3), .05*s,.03,.139);
+    const br = part(head, new THREE.BoxGeometry(.05,.01,.01), hairM, .05*s,.067,.135); br.rotation.z = -.15*s;
+    part(head, sph(.026), skin, .14*s,0,0).scale.set(.5,1,.8);
+    part(head, sph(.02), MT(0xe58a80,.9), .085*s,-.04,.115).scale.set(1,.7,.4);
+  }
+  const sm = part(head, new THREE.TorusGeometry(.03,.005,6,14,Math.PI), MT(0x9a3a3a,.6), 0,-.045,.138); sm.rotation.z = Math.PI;
+  const hr = part(head, new THREE.SphereGeometry(.148,20,16,0,Math.PI*2,0,Math.PI*.5), hairM, 0,.02,-.01); hr.scale.set(1,1.12,1.06); hr.rotation.x = -.25;
+  if(fem){
+    const sc = MT(p.color,.9);
+    const sa = part(head, new THREE.SphereGeometry(.155,20,16,0,Math.PI*2,0,Math.PI*.62), sc, 0,.01,-.02); sa.scale.set(1,1.12,1.06); sa.rotation.x = -.15;
+    part(head, sph(.045), sc, 0,-.1,-.15);
+  } else {
+    part(head, cyl(.27,.27,.02,28), BLACK, 0,.1,0); part(head, cyl(.125,.15,.14,24), BLACK, 0,.17,0); part(head, cyl(.152,.152,.03,24), RED, 0,.125,0);
+  }
+  g.traverse(o => { o.castShadow = true; });
+  g.userData = {legs, head};
+  return addTag(g, p);
+}
+// ---- modele 3D reale (fișiere .glb puse lângă index.html: barbat.glb și femeie.glb) ----
+const MODELS = {m:null, f:null};
+function loadModels(){
+  if(!THREE.GLTFLoader || !THREE.SkeletonUtils) return;
+  const L = new THREE.GLTFLoader();
+  [['m','barbat.glb'],['f','femeie.glb']].forEach(([k,u]) => L.load(u, gl => { MODELS[k] = gl; rebuild(); say('Model 3D încărcat: ' + u); }, undefined, () => {}));
+}
+function makeRealDancer(p, gm){
+  const g = new THREE.Group(), m = THREE.SkeletonUtils.clone(gm.scene);
+  m.updateMatrixWorld(true);
+  const bb = new THREE.Box3().setFromObject(m), s = 1.75/((bb.max.y-bb.min.y)||1);
+  m.scale.multiplyScalar(s); m.position.y = -bb.min.y*s; g.add(m);
+  m.traverse(o => { if(o.isMesh){ o.castShadow = true; o.frustumCulled = false; } });
+  g.userData = {real:true};
+  if(gm.animations && gm.animations.length){ const mx = new THREE.AnimationMixer(m); mx.clipAction(gm.animations[0]).play(); g.userData.mixer = mx; }
+  if(!p.fem){ part(g, cyl(.27,.27,.02,28), BLACK, 0,1.78,0); part(g, cyl(.125,.15,.14,24), BLACK, 0,1.85,0); part(g, cyl(.152,.152,.03,24), RED, 0,1.805,0); }
+  return addTag(g, p);
+}
+function addTag(g, p){
+  const c = document.createElement('canvas'); c.width = 512; c.height = 160;
+  const tex = new THREE.CanvasTexture(c);
+  const tag = new THREE.Sprite(new THREE.SpriteMaterial({map:tex, transparent:true, depthTest:false}));
+  tag.scale.set(1.7,.53,1); tag.position.y = 2.4; tag.renderOrder = 10; g.add(tag);
+  drawTag(c, p, null); tex.needsUpdate = true;
+  if(p.img){ const im = new Image(); im.crossOrigin = 'anonymous';
+    im.onload = () => { drawTag(c, p, im); tex.needsUpdate = true; };
+    im.src = p.img; }
+  return g;
+}
+function rr(x,a,b,w,h,r){ x.beginPath(); x.moveTo(a+r,b); x.arcTo(a+w,b,a+w,b+h,r); x.arcTo(a+w,b+h,a,b+h,r); x.arcTo(a,b+h,a,b,r); x.arcTo(a,b,a+w,b,r); x.closePath(); }
+function drawTag(c, p, img){
+  const x = c.getContext('2d'); x.clearRect(0,0,512,160);
+  rr(x,4,4,504,152,76); x.fillStyle = 'rgba(26,15,18,.85)'; x.fill(); x.strokeStyle = '#f2b705'; x.lineWidth = 5; x.stroke();
+  x.save(); x.beginPath(); x.arc(80,80,62,0,Math.PI*2); x.clip();
+  if(img){ const s = Math.min(img.width,img.height); x.drawImage(img,(img.width-s)/2,(img.height-s)/2,s,s,18,18,124,124); }
+  else { x.fillStyle = p.color; x.fillRect(0,0,160,160); x.fillStyle = '#fff'; x.font = 'bold 70px Georgia'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(p.name[0].toUpperCase(),80,84); }
+  x.restore(); x.beginPath(); x.arc(80,80,62,0,Math.PI*2); x.lineWidth = 5; x.strokeStyle = '#f2b705'; x.stroke();
+  x.fillStyle = '#fff4e0'; x.font = 'bold 46px Georgia'; x.textAlign = 'left'; x.textBaseline = 'middle'; x.fillText(p.name,158,82,330);
+}
+
+// ---------- Horă ----------
+const people = [], dancers = [], links = [];
+const circle = new THREE.Group(); scene.add(circle);
+const pick = a => a[Math.floor(Math.random()*a.length)];
+function newPerson(name, img){
+  return {name, img, fem: people.length % 2 === 0, skin: pick(SKINS), hair: pick(HAIRS), color: pick(COLORS)};
+}
+function rebuild(){
+  while(circle.children.length) circle.remove(circle.children[0]);
+  dancers.length = 0; links.length = 0;
+  people.forEach(p => { const d = makeDancer(p); dancers.push(d); circle.add(d); });
+  if(!(dancers[0] && dancers[0].userData.real)) people.forEach((p,i) => { const l = {a:makeArm(p), b:makeArm(people[(i+1)%people.length])}; circle.add(l.a, l.b); links.push(l); });
+  document.getElementById('count').textContent = people.length + ' dansatori';
+}
+['Ana','Ion','Maria','Vasile','Elena','Mihai','Ioana','Andrei'].forEach(nm => people.push(newPerson(nm)));
+rebuild();
+
+const joinBox = document.getElementById('join'), nm = document.getElementById('nm'), ph = document.getElementById('ph');
+function addPerson(name, img){
+  if(people.length >= 30) return;
+  people.push(newPerson(name || 'Spectator', img)); rebuild(); say('👋 ' + (name||'Spectator') + ' a intrat în horă');
+}
+window.onJoin = addPerson;
+document.getElementById('add').onclick = () => { joinBox.hidden = false; nm.focus(); };
+document.getElementById('cancel').onclick = () => { joinBox.hidden = true; };
+document.getElementById('go').onclick = () => {
+  const f = ph.files[0];
+  addPerson(nm.value.trim() || pick(['Dan','Sofia','Radu','Carmen','Tudor']), f ? URL.createObjectURL(f) : null);
+  nm.value = ''; ph.value = ''; joinBox.hidden = true;
+};
+document.getElementById('rem').onclick = () => { if(people.length > 3){ people.pop(); rebuild(); } };
+
+// ---------- Cadouri ----------
+const sprites = [], texCache = {};
+function emojiTex(e){
+  if(texCache[e]) return texCache[e];
+  const c = document.createElement('canvas'); c.width = c.height = 96;
+  const x = c.getContext('2d'); x.font = '72px serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(e,48,52);
+  return texCache[e] = new THREE.CanvasTexture(c);
+}
+function burst(e, count, mode){
+  for(let k=0;k<count;k++){
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({map:emojiTex(e), transparent:true}));
+    const a = Math.random()*Math.PI*2, r = Math.random()*4; let v;
+    s.scale.setScalar(.5+Math.random()*.4);
+    if(mode==='fall'){ s.position.set(Math.cos(a)*r, 7+Math.random()*3, Math.sin(a)*r); v = new THREE.Vector3((Math.random()-.5)*.6,-1.2-Math.random(),(Math.random()-.5)*.6); }
+    else if(mode==='rise'){ s.position.set(Math.cos(a)*r, .5, Math.sin(a)*r); v = new THREE.Vector3(0,1.5+Math.random()*1.5,0); }
+    else { s.position.set(0,2,0); const sp = 3+Math.random()*4; v = new THREE.Vector3(Math.cos(a)*sp,(Math.random()-.2)*sp,Math.sin(a)*sp*Math.random()); }
+    scene.add(s); sprites.push({s, v, life:3+Math.random()*1.5, g: mode==='boom'?4:0});
+  }
+}
+let boost = 0, flash = 0, bt; const banner = document.getElementById('banner');
+function say(t){ banner.textContent = t; banner.style.opacity = 1; clearTimeout(bt); bt = setTimeout(() => banner.style.opacity = 0, 2200); }
+const GIFTS = {
+  trandafir:(u)=>{ say('🌹 Trandafir de la '+u); burst('🌹',40,'fall'); },
+  leu:(u,a)=>{ say('🦁 Leu de la '+u); burst('✨',60,'boom'); burst('🦁',6,'boom'); flash = 1; addPerson(u,a); },
+  inima:(u)=>{ say('❤️ Inimă de la '+u); burst('❤️',30,'rise'); },
+  galaxie:(u)=>{ say('🌌 Galaxie de la '+u); burst('⭐',50,'boom'); boost = 6; flash = 1.5; }
+};
+// TikTok LIVE: onJoin('nume','url-poza') și onGift('leu','nume','url-poza'); sau WebSocket cu ?ws=wss://serverul-tau
+// mesaje JSON: {"type":"join","user":"nume","avatar":"url"} sau {"type":"leu","user":"nume","avatar":"url"}
+window.onGift = (type,user,avatar) => (GIFTS[type] || (()=>{}))(user || 'Spectator', avatar);
+document.querySelectorAll('[data-g]').forEach(b => b.onclick = () => onGift(b.dataset.g,'Spectator'));
+const wsUrl = new URLSearchParams(location.search).get('ws');
+if(wsUrl){ try{ const ws = new WebSocket(wsUrl); ws.onmessage = e => { try{ const m = JSON.parse(e.data); m.type === 'join' ? onJoin(m.user,m.avatar) : onGift(m.type,m.user,m.avatar); }catch(_){} }; }catch(_){} }
+
+// ---------- Cameră ----------
+let camA = .6, camR = 11, camH = 5, drag = null, lastTouch = 0;
+addEventListener('pointerdown', e => { if(e.target.closest('button,#join')) return; drag = {x:e.clientX, y:e.clientY}; });
+addEventListener('pointermove', e => { if(!drag) return; camA -= (e.clientX-drag.x)*.008; camH = Math.max(1.5, Math.min(10, camH + (e.clientY-drag.y)*.02)); drag = {x:e.clientX, y:e.clientY}; lastTouch = performance.now(); });
+addEventListener('pointerup', () => drag = null);
+addEventListener('wheel', e => { camR = Math.max(6, Math.min(18, camR + e.deltaY*.01)); });
+addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); });
+
+loadModels();
+const clock = new THREE.Clock(); let t = 0, spin = 0;
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), .05), n = people.length;
+  const speed = boost > 0 ? 2.2 : 1; boost = Math.max(0, boost - dt);
+  t += dt*speed; spin += dt*speed*(reduce ? .2 : .5);
+  const R = Math.max(2.4, n*.62/(2*Math.sin(Math.PI/n)));
+  ring.scale.setScalar(R/3.7);
+  const pts = [];
+  dancers.forEach((d,i) => {
+    const a = i/n*Math.PI*2 + spin, hop = Math.abs(Math.sin(t*6))*.06;
+    d.position.set(Math.cos(a)*R, hop, Math.sin(a)*R); d.lookAt(0,hop,0);
+    if(d.userData.mixer) d.userData.mixer.setTime(t);
+    (d.userData.legs || []).forEach(l => {   // pas de horă sincron: picioarele alternează, genunchii se îndoaie
+      const ph = Math.sin(t*6 + (l.s > 0 ? 0 : Math.PI));
+      l.hip.rotation.x = -ph*.5; l.knee.rotation.x = Math.max(0,-ph)*.9;
+    });
+    if(d.userData.head) d.userData.head.rotation.z = Math.sin(t*3)*.06;
+    pts.push(new THREE.Vector3(Math.cos(a)*R, 1.4 + hop + Math.sin(t*6)*.03, Math.sin(a)*R));
+  });
+  links.forEach((l,i) => {
+    const p = pts[i], q = pts[(i+1)%n];
+    const m = p.clone().add(q).multiplyScalar(.5); m.y -= .15; setArm(l.a,p,m); setArm(l.b,q,m);
+  });
+  for(let k=sprites.length-1;k>=0;k--){
+    const o = sprites[k]; o.life -= dt; o.v.y -= o.g*dt; o.s.position.addScaledVector(o.v,dt);
+    o.s.material.opacity = Math.min(1,o.life);
+    if(o.life <= 0){ scene.remove(o.s); o.s.material.dispose(); sprites.splice(k,1); }
+  }
+  flash = Math.max(0, flash-dt);
+  glow.intensity = 1.2 + flash*4*Math.abs(Math.sin(t*10)); glow.color.setHSL((t*.3)%1, .9, .5);
+  if(!drag && performance.now()-lastTouch > 2500) camA += dt*.12;
+  camera.position.set(Math.cos(camA)*camR*(1+n/60), camH, Math.sin(camA)*camR*(1+n/60));
+  camera.lookAt(0,1.2,0);
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
